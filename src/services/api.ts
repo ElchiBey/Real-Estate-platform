@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { MOCK_PROPERTY, isMockDataEnabled } from './mockProperty';
 
 // API Base URL - uses env variable or falls back to localhost
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
@@ -74,8 +75,12 @@ export const propertiesAPI = {
   getAll: () =>
     apiClient.get('/products/list'),
 
+  // Serves a fixture when VITE_USE_MOCK_DATA=true so the detail page is usable
+  // without a backend.
   getById: (id: string) =>
-    apiClient.get(`/products/single/${id}`),
+    isMockDataEnabled()
+      ? Promise.resolve({ data: { success: true, property: { ...MOCK_PROPERTY, _id: id } } })
+      : apiClient.get(`/products/single/${id}`),
 };
 
 // User-submitted property listings (require auth)

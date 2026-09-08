@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
   readonly VITE_ENABLE_AI_HUB: string;
+  /** "true" serves local fixtures instead of calling the backend. */
+  readonly VITE_USE_MOCK_DATA: string;
 }
 
 interface ImportMeta {
