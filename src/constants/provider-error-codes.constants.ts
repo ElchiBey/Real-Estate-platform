@@ -1,0 +1,3 @@
+export const CODE_USER_REJECTED = 4001;
+export const CODE_CHAIN_NOT_ADDED = 4902;
+export const CODE_REQUEST_ALREADY_PENDING = -32002;
