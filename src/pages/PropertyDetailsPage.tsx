@@ -10,6 +10,8 @@ import PropertyAbout from '../components/property-details/PropertyAbout';
 import PropertyAmenities from '../components/property-details/PropertyAmenities';
 import PropertyLocation from '../components/property-details/PropertyLocation';
 import ScheduleViewingCard from '../components/property-details/ScheduleViewingCard';
+import ConnectWalletCard from '../components/property-details/ConnectWalletCard';
+import Web3Provider from '../components/web3/Web3Provider';
 import { propertiesAPI } from '../services/api';
 import { useSEO } from '../hooks/useSEO';
 import StructuredData from '../components/common/StructuredData';
@@ -197,8 +199,12 @@ const PropertyDetailsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Column - Schedule Viewing Sidebar */}
+            {/* Right Column - Wallet & Schedule Viewing Sidebar */}
             <div className="lg:col-span-1">
+              <Web3Provider>
+                <ConnectWalletCard />
+              </Web3Provider>
+
               <ScheduleViewingCard
                 property={{ name: property.title, id: property._id }}
               />
