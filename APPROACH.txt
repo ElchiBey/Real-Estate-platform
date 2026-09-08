@@ -1,0 +1,177 @@
+APPROACH — Wallet Connection on the Property Detail Page
+========================================================
+
+THE TASK
+--------
+Add a "Connect Wallet" button to the property detail page using Wagmi and
+RainbowKit. When connected, show the truncated address and the network name
+(Polygon Amoy). Prompt to switch if the user is on the wrong network. Handle
+disconnect, show a loading state, and match the existing Tailwind design.
+No smart contract calls — connection and display only.
+
+
+PART 0 — GETTING THE PROJECT TO RUN AT ALL
+------------------------------------------
+Before writing any wallet code, the project had to actually start. Three
+things were broken:
+
+1. missing dependencies.
+   The UI components imported most of the @radix-ui packages plus cmdk, vaul,
+   react-hook-form, input-otp, next-themes and react-resizable-panels, but
+   none of them were listed in package.json. npm install succeeded and then
+   the build died on unresolved imports. Added them and committed a lockfile,
+   which is what stops this happening again.
+
+2. A type error in the sign-in flow.
+   The "remember me" checkbox was passed from the form through AuthContext all
+   the way to userAPI.login, but login's type didn't accept the field. I
+   widened the type instead of deleting the argument — the flag was already
+   being sent over the network, so removing it would have quietly changed
+   behaviour.
+
+3. No linting.
+   The README documented "npm run lint" but there was no ESLint installed or
+   configured. Added ESLint 9 with typescript-eslint and the React plugins.
+
+4. No backend.
+   This repo is frontend-only. localhost:4000 isn't running, and the deployed
+   URL in .env.example now returns 404 on every route. The property detail page
+   bails out to an error screen when its fetch fails, which meant the wallet
+   card could never render and the feature couldn't be demoed.
+
+   So there's a small development fixture: set VITE_USE_MOCK_DATA=true and
+   propertiesAPI.getById returns a hardcoded property instead of calling the
+   API. It lives in the services layer, so no component knows about it. This is
+   scaffolding, not part of the feature, and it's in its own commit so it's easy
+   to delete once a real backend exists.
+
+
+PART 1 — THE WALLET WORK
+------------------------
+Built in four commits so each piece can be reviewed on its own:
+
+  1. Dependencies
+  2. Wagmi config + provider
+  3. The wallet card
+  4. Wiring it into the page
+
+Files added:
+
+  src/lib/wagmi.ts                                  chain + connector config
+  src/components/web3/Web3Provider.tsx              the provider stack
+  src/components/property-details/ConnectWalletCard.tsx   the UI
+  src/components/reusable/Button.tsx                shared button with variants
+  src/utils/truncateAddress.ts                      0x1234...5678
+  src/utils/walletErrors.ts                         error classification
+  src/constants/                                    extracted styles + codes
+
+
+KEY DECISIONS
+-------------
+
+1. Pinned wagmi to version 2, not the latest.
+   This one is a trap. "npm install wagmi" gives you 3.7.7, but RainbowKit
+   2.2.11 requires wagmi ^2.9.0. Installing the latest would break the peer
+   contract, and npm only warns about it. Pinned to ^2.19.5 and confirmed it
+   dedupes against RainbowKit's own copy.
+
+2. Injected wallets only — no WalletConnect.
+   RainbowKit's usual getDefaultConfig helper requires a WalletConnect Project
+   ID from a third-party dashboard. Without a real one, the WalletConnect
+   option in the modal fails when clicked. Rather than ship a credential that
+   might be missing or expired during review, I used wagmi's createConfig with
+   the injected() connector. Combined with EIP-6963 discovery this picks up
+   MetaMask, Rabby, Brave and anything else the browser has, and there's no
+   secret to configure — it just works on any machine.
+
+3. Providers wrap only the property page, not the whole app.
+   Most tutorials put WagmiProvider at the app root. Wagmi, viem and RainbowKit
+   are a large dependency tree, and the home, about and contact pages have no
+   use for them. The property detail page is already lazy-loaded, so importing
+   the provider there keeps everything web3 inside that page's chunk.
+   Verified: the home page chunk is unchanged at 26 kB and index.html doesn't
+   preload anything web3.
+
+4. RainbowKit's ConnectButton.Custom instead of its default button.
+   The default <ConnectButton /> works but looks like RainbowKit. The Custom
+   render prop gives us the modals and connection state while we supply our own
+   markup, so the card reuses the exact card shell, buttons, colours and fonts
+   as the Schedule Viewing card sitting below it.
+
+5. Chain switching uses wagmi directly, not RainbowKit's chain modal.
+   RainbowKit can open a network picker, but that's two clicks and its error
+   handling is inside its own UI. Since there's only one supported network,
+   a single "Switch to Polygon Amoy" button wired to useSwitchChain is better
+   UX and lets us handle the rejection ourselves.
+
+6. Error handling walks the error chain.
+   Wallet errors arrive either as viem's typed error classes or as raw provider
+   objects with a numeric code. viem also nests the original error under
+   `cause`, sometimes several levels deep, so the common `error.code === 4001`
+   check misses most real rejections. walletErrors.ts checks the typed classes
+   AND recursively walks the cause chain, covering:
+     4001   user rejected
+     4902   network not added to the wallet
+     -32002 a request is already open in the wallet
+
+7. Rejections deliberately show no error toast.
+   If someone clicks "Reject", they know what they did. A red error toast for a
+   deliberate action makes it feel like the app broke. getWalletErrorMessage
+   returns null for rejections and the card just stays where it was.
+
+8. Our own address truncation.
+   RainbowKit exposes account.displayName, but it substitutes an ENS name when
+   one exists, so it wouldn't reliably produce the 0x1234...5678 format the
+   task asked for.
+
+9. The network label isn't hardcoded.
+   TARGET_CHAIN is exported from the config, and the UI renders chain.name.
+   Viem's polygonAmoy is literally named "Polygon Amoy", so the label is always
+   correct and changing networks is a one-line change in one file.
+
+
+TRADE-OFFS
+----------
+
+- Fewer wallet options. Skipping WalletConnect means no mobile QR connection.
+  In exchange there's no API key to manage and nothing that can break in a
+  reviewer's browser. Adding it later is one connector in one file.
+
+- The property page is heavier. RainbowKit ships per-locale bundles and the
+  page now costs about 200 kB gzipped. That's RainbowKit's inherent size. The
+  win is that it's confined to this one route — the rest of the site is
+  untouched.
+
+- Connect rejection is handled by RainbowKit, not by our code. Connection runs
+  inside RainbowKit's modal, and wagmi's useConnect error state is per-hook, so
+  our component can't observe it. RainbowKit shows its own retry UI and the
+  card returns to the disconnected state. The chain-switch rejection path IS
+  ours and is handled explicitly. This is a real boundary, not an oversight.
+
+- A second Button component. The project already has a shadcn button, but it's
+  styled from the --primary token with rounded-md, while the property
+  cards use a different terracotta with rounded-xl and Manrope. They
+  don't interchange, so components/reusable/Button.tsx holds the variants these
+  surfaces actually use.
+
+- The mock fixture. It makes the page demoable without a backend, but the flag
+  is inlined at build time, so it must be off in production or the live site
+  would serve fake data. .env.example warns about this.
+
+- Lint warnings left alone. There are 36 pre-existing ESLint warnings, mostly
+  `any` types in older files. I didn't clean them up — it would have buried the
+  wallet changes in unrelated noise. None of them are in the new code.
+
+
+HOW TO RUN
+----------
+  npm install
+  cp .env.example .env        # VITE_USE_MOCK_DATA=true matters here
+  npm run dev
+
+  Then open  http://localhost:5173/property/mock-1
+
+  Other scripts: npm run build, npm run typecheck, npm run lint
+
+  You'll need MetaMask with the Polygon Amoy network (chain id 80002) added.
+  If it isn't added, the switch button exercises the 4902 branch instead.
